@@ -40,7 +40,7 @@ Manager::Manager(string configfile)
 	m_iPeerThreadPoolNum = config->GetIntVal("SYSTEM", "threadnum", 5);
 	m_iTestMode = config->GetIntVal("SYSTEM", "testmode", 0);
 
-	m_htm = HashtableManager((unsigned int)m_ihashnum);
+	m_htm.Create((unsigned int)m_ihashnum);
 
 	for(int i = 0; i < m_iServernum; i++)
 	{
@@ -218,7 +218,7 @@ void* Process(void* arg)
 	{
 		pmgr->m_semRequest->Wait();
 		pmgr->m_mtxRequest->Lock();
-		Socket* client = m_rq.front();
+		Socket* client = pmgr->m_rq.front();
 		pmgr->m_rq.pop();
 		pmgr->m_mtxRequest->Unlock();
 
@@ -339,7 +339,7 @@ void* UserCmdProcess(void* arg)
 			cout<<"Please enter the key"<<endl;
 			cin>>key;
 
-			if(pmgr->get(key) != 0 || value == "")
+			if(pmgr->get(key, value) != 0 || value == "")
 				cout<<"get failed"<<endl;
 			else
 				cout<<"get success"<<endl;
@@ -365,7 +365,7 @@ void* UserCmdProcess(void* arg)
 }
 
 
-int Manager::put(const string& key, const string& value)
+int Manager::put(string key, string value)
 {
 	int hash = getHash(key);
 	string severip = m_vecPeerInfo[hash%m_iServernum].ip;
@@ -382,7 +382,7 @@ int Manager::put(const string& key, const string& value)
 
 	char* sbuff = new char[MAX_MESSAGE_LENGTH];
 	bzero(sbuff, MAX_MESSAGE_LENGTH);
-	(Message*) smsg = (Message*)sbuff;
+	Message* smsg = (Message*)sbuff;
 	smsg->action = CMD_PUT;
 	strncpy(smsg->key, key.c_str(), MAX_KEY_LENGTH);
 	strncpy(smsg->value, value.c_str(), MAX_VALUE_LENGTH);
@@ -408,7 +408,7 @@ int Manager::put(const string& key, const string& value)
 		return -1;
 	}
 
-	(Message*) rmsg = (Message*)rbuff;
+	Message* rmsg = (Message*)rbuff;
 	int ret = rmsg->action == CMD_OK?0:-1;
 
 	sock->Close();
@@ -417,7 +417,7 @@ int Manager::put(const string& key, const string& value)
 	delete[] rbuff;
 	return ret;
 }
-int Manager::get(const string& key, string& value)
+int Manager::get(string key, string& value)
 {
 	int hash = getHash(key);
 	string severip = m_vecPeerInfo[hash%m_iServernum].ip;
@@ -434,7 +434,7 @@ int Manager::get(const string& key, string& value)
 
 	char* sbuff = new char[MAX_MESSAGE_LENGTH];
 	bzero(sbuff, MAX_MESSAGE_LENGTH);
-	(Message*) smsg = (Message*)sbuff;
+	Message* smsg = (Message*)sbuff;
 	smsg->action = CMD_SEARCH;
 	strncpy(smsg->key, key.c_str(), MAX_KEY_LENGTH);
 
@@ -459,7 +459,7 @@ int Manager::get(const string& key, string& value)
 		return -1;
 	}
 
-	(Message*) rmsg = (Message*)rbuff;
+	Message* rmsg = (Message*)rbuff;
 	value = rmsg->value;
 
 	sock->Close();
@@ -469,7 +469,7 @@ int Manager::get(const string& key, string& value)
 	return 0;
 }
 
-bool Manager::del(const string& key)
+bool Manager::del(string key)
 {
 	int hash = getHash(key);
 	string severip = m_vecPeerInfo[hash%m_iServernum].ip;
@@ -486,7 +486,7 @@ bool Manager::del(const string& key)
 
 	char* sbuff = new char[MAX_MESSAGE_LENGTH];
 	bzero(sbuff, MAX_MESSAGE_LENGTH);
-	(Message*) smsg = (Message*)sbuff;
+	Message* smsg = (Message*)sbuff;
 	smsg->action = CMD_DEL;
 	strncpy(smsg->key, key.c_str(), MAX_KEY_LENGTH);
 
@@ -511,7 +511,7 @@ bool Manager::del(const string& key)
 		return -1;
 	}
 
-	(Message*) rmsg = (Message*)rbuff;
+	Message* rmsg = (Message*)rbuff;
 	int ret = rmsg->action == CMD_OK?0:-1;
 
 	sock->Close();

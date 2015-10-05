@@ -9,13 +9,13 @@ using namespace std;
 class HashtableManager
 {
 public:
-	HashtableManager(unsigned int hashnum);
+	HashtableManager();
 	~HashtableManager();
 
 	int Create(unsigned int hashnum);
-	int Insert(const string& key, const string& value);
-	int Search(const string& key, string& value);
-	int Delete(const string& key);
+	int Insert(string key, string value);
+	int Search(string key, string& value);
+	int Delete(string key);
 
 private:
 	Mutex* m_pmtx;

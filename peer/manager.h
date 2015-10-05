@@ -35,9 +35,9 @@ protected:
 	int Loop();
 
 private:
-	int put(const string& key, const string& value);
-	int get(const string& key, string& value);
-	bool del(const string& key);
+	int put(string key, string value);
+	int get(string key, string& value);
+	bool del(string key);
 	// for uniform distribution, we here suppose the key is all number string, like "999"
 	// and getHash only return its int.
 	int getHash(const string& key);
