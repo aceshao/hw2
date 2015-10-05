@@ -36,15 +36,15 @@ int HashtableManager::Insert(string key, string value)
 
 int HashtableManager::Search(string key, string& value)
 {
-	m_pmtx->Lock();
+//	m_pmtx->Lock();
 	void* v = NULL;
 	if((v = ght_get(m_pght, key.length(), (char*)key.c_str())) == NULL)
 	{
-		m_pmtx->Unlock();
+//		m_pmtx->Unlock();
 		return -1;
 	}
 	value = (char*)v;
-	m_pmtx->Unlock();
+//	m_pmtx->Unlock();
 	return 0;
 }
 

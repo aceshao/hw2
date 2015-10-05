@@ -67,12 +67,17 @@ private:
 
 	Sem* m_semRequest;
 	Mutex* m_mtxRequest;
+	
+	// since the connection is open, each read/write we nned lock
+	Mutex* m_mtxRecv;
+	Mutex* m_mtxSend;
 
 	vector<Thread*> m_vecProcessThread;
 	Thread* m_pUserProcess;
 	
 	int m_iPid;
-
+	
+	vector<Socket*> m_vecServerSock; // record each connection in server side
 
 	unsigned int m_iPutTime;
 	unsigned int m_iGetTime;

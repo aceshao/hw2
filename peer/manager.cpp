@@ -24,6 +24,9 @@ Manager::Manager(string configfile)
 	m_semRequest = NULL;
 	m_mtxRequest = NULL;
 	m_pUserProcess = NULL;
+	
+	m_mtxRecv = NULL;
+	m_mtxSend = NULL;
 
 	m_iPutTime = 0;
 	m_iGetTime = 0;
@@ -98,6 +101,16 @@ Manager::~Manager()
 		delete m_mtxRequest;
 		m_mtxRequest = NULL;
 	}
+	if(m_mtxRecv)
+	{
+		delete m_mtxRecv;
+		m_mtxRecv = NULL;
+	}
+	if(m_mtxSend)
+	{
+		delete m_mtxSend;
+		m_mtxSend = NULL;
+	}
 	for(unsigned int i = 0; i < m_vecProcessThread.size(); i++)
 	{
 		if(m_vecProcessThread[i])
@@ -116,6 +129,7 @@ Manager::~Manager()
 	{
 		if(m_vecPeerInfo[i].sock != NULL)
 		{
+			m_vecPeerInfo[i].sock->Close();
 			delete m_vecPeerInfo[i].sock;
 			m_vecPeerInfo[i].sock = NULL;
 		}
@@ -166,6 +180,8 @@ int Manager::Init()
 	m_pSocket = new Socket(m_strSelfIp.c_str(), m_iSelfPort, ST_TCP);
 	m_semRequest = new Sem(0, 0);
 	m_mtxRequest = new Mutex();
+	m_mtxRecv = new Mutex();
+	m_mtxSend = new Mutex();
 	for(int i = 0; i <= m_iPeerThreadPoolNum; i++)
 	{
 		Thread* thread = new Thread(Process, this);
@@ -224,6 +240,7 @@ int Manager::Loop()
 					continue;
 				}
 				s->SetSockAddressReuse(true);
+				m_vecServerSock.push_back(s);
 				// all the new socket into the listen queue to resue connection
 				struct epoll_event ev;
 				ev.data.fd = s->GetSocket();
@@ -236,8 +253,20 @@ int Manager::Loop()
 			}
 			else if(events[i].events & EPOLLIN)
 			{
+				Socket* s = NULL;
+				for(unsigned int j = 0; j < m_vecServerSock.size(); j++)
+				{
+					if(events[i].data.fd == m_vecServerSock[j]->GetSocket())
+					{
+						s = m_vecServerSock[j];
+						break;
+					}
+				}
+				if(s == NULL)
+					cout<<"event id["<<events[i].events<<"]"<<endl;
+				assert(s != NULL);
 				m_mtxRequest->Lock();
-				m_rq.push(events[i].data.fd);
+				m_rq.push(s);
 				m_semRequest->Post();
 				m_mtxRequest->Unlock();	
 			}
@@ -247,7 +276,7 @@ int Manager::Loop()
 			}
 
 		}
-		usleep(100000);
+		usleep(0);
 	}
 return 0;
 }
@@ -266,12 +295,15 @@ void* Process(void* arg)
 
 		char* recvBuff = new char[MAX_MESSAGE_LENGTH];
 		bzero(recvBuff, MAX_MESSAGE_LENGTH);
+		//pmgr->m_mtxRecv->Lock();
 		if(client->Recv(recvBuff, MAX_MESSAGE_LENGTH) != MAX_MESSAGE_LENGTH)
 		{
-			cout<<"recv failed"<<endl;
+			cout<<"server recv failed"<<endl;
+		//	pmgr->m_mtxRecv->Unlock();
 			delete [] recvBuff;
 			continue;
 		}
+		//pmgr->m_mtxRecv->Unlock();
 
 		char* sendBuff = new char[MAX_MESSAGE_LENGTH];
 		bzero(sendBuff, MAX_MESSAGE_LENGTH);
@@ -296,7 +328,9 @@ void* Process(void* arg)
 					strncpy(sendMsg->key, recvMsg->key, MAX_KEY_LENGTH);
 					strncpy(sendMsg->value, value.c_str(), MAX_KEY_LENGTH);
 				}
+				//pmgr->m_mtxSend->Lock();
 				client->Send(sendMsg, MAX_MESSAGE_LENGTH);
+				//pmgr->m_mtxSend->Unlock();
 				break;
 			}
 
@@ -314,7 +348,9 @@ void* Process(void* arg)
 					strncpy(sendMsg->key, recvMsg->key, MAX_KEY_LENGTH);
 					strncpy(sendMsg->value, recvMsg->value, MAX_VALUE_LENGTH);
 				}
+				//pmgr->m_mtxSend->Lock();
 				client->Send(sendMsg, MAX_MESSAGE_LENGTH);
+				//pmgr->m_mtxSend->Unlock();
 				break;				
 			}
 			case CMD_DEL:
@@ -331,7 +367,9 @@ void* Process(void* arg)
 					strncpy(sendMsg->key, recvMsg->key, MAX_KEY_LENGTH);
 					bzero(sendMsg->value, MAX_VALUE_LENGTH);
 				}
+				//pmgr->m_mtxSend->Lock();
 				client->Send(sendMsg, MAX_MESSAGE_LENGTH);
+				//pmgr->m_mtxSend->Unlock();
 				break;				
 			}
 			default:
@@ -444,7 +482,7 @@ int Manager::put(string key, string value)
 	string severip = m_vecPeerInfo[hash%m_iServernum].ip;
 	int serverport = m_vecPeerInfo[hash%m_iServernum].port;
 	Socket* sock = NULL;
-	if((sock = getSock(severip.c_str(), serverport) == NULL)
+	if((sock = getSock(severip.c_str(), serverport)) == NULL)
 	{
 		cout<<"get sock failed"<<endl;
 		return -1;
@@ -460,7 +498,6 @@ int Manager::put(string key, string value)
 	if(sock->Send(sbuff, MAX_MESSAGE_LENGTH) != MAX_MESSAGE_LENGTH)
 	{
 		cout<<"send put message to hash server failed"<<endl;
-		sock->Close();
 		delete[] sbuff;
 		return -1;
 	}
@@ -470,7 +507,6 @@ int Manager::put(string key, string value)
 	if(sock->Recv(rbuff, MAX_MESSAGE_LENGTH) != MAX_MESSAGE_LENGTH)
 	{
 		cout<<"put message recv from hash server failed"<<endl;
-		sock->Close();
 		delete[] sbuff;
 		delete[] rbuff;
 		return -1;
@@ -479,7 +515,6 @@ int Manager::put(string key, string value)
 	Message* rmsg = (Message*)rbuff;
 	int ret = rmsg->action == CMD_OK?0:-1;
 
-	sock->Close();
 	delete[] sbuff;
 	delete[] rbuff;
 	return ret;
@@ -490,7 +525,7 @@ int Manager::get(string key, string& value)
 	string severip = m_vecPeerInfo[hash%m_iServernum].ip;
 	int serverport = m_vecPeerInfo[hash%m_iServernum].port;
 	Socket* sock = NULL;
-	if((sock = getSock(severip.c_str(), serverport) == NULL)
+	if((sock = getSock(severip.c_str(), serverport)) == NULL)
 	{
 		cout<<"get sock failed"<<endl;
 		return -1;
@@ -505,7 +540,6 @@ int Manager::get(string key, string& value)
 	if(sock->Send(sbuff, MAX_MESSAGE_LENGTH) != MAX_MESSAGE_LENGTH)
 	{
 		cout<<"send search message to hash server failed"<<endl;
-		sock->Close();
 		delete[] sbuff;
 		return -1;
 	}
@@ -515,7 +549,6 @@ int Manager::get(string key, string& value)
 	if(sock->Recv(rbuff, MAX_MESSAGE_LENGTH) != MAX_MESSAGE_LENGTH)
 	{
 		cout<<"search message recv from hash server failed"<<endl;
-		sock->Close();
 		delete[] sbuff;
 		delete[] rbuff;
 		return -1;
@@ -524,7 +557,6 @@ int Manager::get(string key, string& value)
 	Message* rmsg = (Message*)rbuff;
 	value = rmsg->value;
 
-	sock->Close();
 	delete[] sbuff;
 	delete[] rbuff;
 	return 0;
@@ -536,7 +568,7 @@ bool Manager::del(string key)
 	string severip = m_vecPeerInfo[hash%m_iServernum].ip;
 	int serverport = m_vecPeerInfo[hash%m_iServernum].port;
 	Socket* sock = NULL;
-	if((sock = getSock(severip.c_str(), serverport) == NULL)
+	if((sock = getSock(severip.c_str(), serverport)) == NULL)
 	{
 		cout<<"get sock failed"<<endl;
 		return -1;
@@ -551,7 +583,6 @@ bool Manager::del(string key)
 	if(sock->Send(sbuff, MAX_MESSAGE_LENGTH) != MAX_MESSAGE_LENGTH)
 	{
 		cout<<"send put message to hash server failed"<<endl;
-		sock->Close();
 		delete[] sbuff;
 		return -1;
 	}
@@ -561,7 +592,6 @@ bool Manager::del(string key)
 	if(sock->Recv(rbuff, MAX_MESSAGE_LENGTH) != MAX_MESSAGE_LENGTH)
 	{
 		cout<<"put message recv from hash server failed"<<endl;
-		sock->Close();
 		delete[] sbuff;
 		delete[] rbuff;
 		return -1;
@@ -570,7 +600,6 @@ bool Manager::del(string key)
 	Message* rmsg = (Message*)rbuff;
 	int ret = rmsg->action == CMD_OK?0:-1;
 
-	sock->Close();
 	delete[] sbuff;
 	delete[] rbuff;
 	return ret;
@@ -584,6 +613,9 @@ int Manager::getHash(const string& key)
 int Manager::testmode()
 {
 	cout<<"You are now in TEST MODE"<<endl;
+	cout<<"Sleep for 5 seconds to wait other server up"<<endl;
+	usleep(5000000);
+	cout<<"Now begin to test"<<endl;
 	const int keybegin = m_vecPeerInfo[m_iCurrentServernum].keybegin;
 	const int keyend = m_vecPeerInfo[m_iCurrentServernum].keyend;
 
@@ -601,6 +633,7 @@ int Manager::testmode()
 	}
 	gettimeofday(&end, NULL);
 	m_iPutTime = 1000000*end.tv_sec + end.tv_usec - begin.tv_usec - 1000000*begin.tv_sec;
+	int atbegin = begin.tv_usec + 1000000*begin.tv_sec;
 
 
 	gettimeofday(&begin, NULL);	
@@ -627,11 +660,14 @@ int Manager::testmode()
 	}	
 	gettimeofday(&end, NULL);
 	m_iDelTime = 1000000*end.tv_sec + end.tv_usec - begin.tv_usec - 1000000*begin.tv_sec;
+	
+	int atend = end.tv_usec + 1000000*end.tv_sec;
 
 
 	int loop = keyend - keybegin;
 	assert(loop > 0);
 	cout<<"Peer node["<<m_iCurrentServernum<<"] do ["<<loop<<"] times put, get, del each"<<endl;
+	cout<<"Total time["<<atend-atbegin<<"]us"<<endl;
 	cout<<"Average put time is ["<<m_iPutTime/loop<<"]us"<<endl;
 	cout<<"Average get time is ["<<m_iGetTime/loop<<"]us"<<endl;
 	cout<<"Average del time is ["<<m_iDelTime/loop<<"]us"<<endl;
