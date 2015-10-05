@@ -36,8 +36,11 @@ Manager::Manager(string configfile)
 	m_iServernum = config->GetIntVal("SYSTEM", "servernum", 8);
 	m_iCurrentServernum = config->GetIntVal("SYSTEM", "currentservernum", 0);
 	assert(m_iCurrentServernum < m_iServernum);
+	m_ihashnum = config->GetIntVal("SYSTEM", "hashnum", 100000);
 	m_iPeerThreadPoolNum = config->GetIntVal("SYSTEM", "threadnum", 5);
 	m_iTestMode = config->GetIntVal("SYSTEM", "testmode", 0);
+
+	m_htm = HashtableManager((unsigned int)m_ihashnum);
 
 	for(int i = 0; i < m_iServernum; i++)
 	{
@@ -54,8 +57,8 @@ Manager::Manager(string configfile)
 		m_vecPeerInfo.push_back(pi);
 	}
 
-	m_strPeerIp = m_vecPeerInfo[m_iCurrentServernum].ip;
-	m_iPeerPort = m_vecPeerInfo[m_iCurrentServernum].port;
+	m_strSelfIp = m_vecPeerInfo[m_iCurrentServernum].ip;
+	m_iSelfPort = m_vecPeerInfo[m_iCurrentServernum].port;
 
 
 }
@@ -138,7 +141,7 @@ int  Manager::IsStoped()
 
 int Manager::Init()
 {
-	m_pSocket = new Socket(m_strPeerIp.c_str(), m_iPeerPort, ST_TCP);
+	m_pSocket = new Socket(m_strSelfIp.c_str(), m_iSelfPort, ST_TCP);
 	m_semRequest = new Sem(0, 0);
 	m_mtxRequest = new Mutex();
 	for(int i = 0; i <= m_iPeerThreadPoolNum; i++)
@@ -209,17 +212,318 @@ return 0;
 
 void* Process(void* arg)
 {
-return 0;
+	Manager* pmgr = (Manager*)arg;
+
+	while(1)
+	{
+		pmgr->m_semRequest->Wait();
+		pmgr->m_mtxRequest->Lock();
+		Socket* client = m_rq.front();
+		pmgr->m_rq.pop();
+		pmgr->m_mtxRequest->Unlock();
+
+		char* recvBuff = new char[MAX_MESSAGE_LENGTH];
+		bzero(recvBuff, MAX_MESSAGE_LENGTH);
+		if(client->Recv(recvBuff, MAX_MESSAGE_LENGTH) != MAX_MESSAGE_LENGTH)
+		{
+			cout<<"recv failed"<<endl;
+			client->Close();
+			delete [] recvBuff;
+			continue;
+		}
+
+		char* sendBuff = new char[MAX_MESSAGE_LENGTH];
+		bzero(sendBuff, MAX_MESSAGE_LENGTH);
+		Message* sendMsg = (Message*)sendBuff;
+
+		Message* recvMsg = (Message*)recvBuff;
+		switch(recvMsg->action)
+		{
+			case CMD_SEARCH:
+			{
+				string value = "";
+				if(pmgr->m_htm.Search(recvMsg->key, value) != 0)
+				{
+					// search failed, return the value null
+					sendMsg->action = CMD_OK;
+					strncpy(sendMsg->key, recvMsg->key, MAX_KEY_LENGTH);
+					bzero(sendMsg->value, MAX_VALUE_LENGTH);
+				}
+				else
+				{
+					sendMsg->action = CMD_OK;
+					strncpy(sendMsg->key, recvMsg->key, MAX_KEY_LENGTH);
+					strncpy(sendMsg->value, value.c_str(), MAX_KEY_LENGTH);
+				}
+				client->Send(sendMsg, MAX_MESSAGE_LENGTH);
+				break;
+			}
+
+			case CMD_PUT:
+			{
+				if(pmgr->m_htm.Insert(recvMsg->key, recvMsg->value) != 0)
+				{
+					sendMsg->action = CMD_FAILED;
+					strncpy(sendMsg->key, recvMsg->key, MAX_KEY_LENGTH);
+					strncpy(sendMsg->value, recvMsg->value, MAX_VALUE_LENGTH);
+				}
+				else
+				{
+					sendMsg->action = CMD_OK;
+					strncpy(sendMsg->key, recvMsg->key, MAX_KEY_LENGTH);
+					strncpy(sendMsg->value, recvMsg->value, MAX_VALUE_LENGTH);
+				}
+				client->Send(sendMsg, MAX_MESSAGE_LENGTH);
+				break;				
+			}
+			case CMD_DEL:
+			{
+				if(pmgr->m_htm.Delete(recvMsg->key) != 0)
+				{
+					sendMsg->action = CMD_FAILED;
+					strncpy(sendMsg->key, recvMsg->key, MAX_KEY_LENGTH);
+					bzero(sendMsg->value, MAX_VALUE_LENGTH);
+				}
+				else
+				{
+					sendMsg->action = CMD_OK;
+					strncpy(sendMsg->key, recvMsg->key, MAX_KEY_LENGTH);
+					bzero(sendMsg->value, MAX_VALUE_LENGTH);
+				}
+				client->Send(sendMsg, MAX_MESSAGE_LENGTH);
+				break;				
+			}
+			default:
+			cout<<"cmd unknown["<<recvMsg->action<<"]"<<endl;
+		}
+
+		client->Close();
+		delete[] recvBuff;
+		delete[] sendBuff;
+	}
+
+	return 0;
 }
 
 
 void* UserCmdProcess(void* arg)
 {
+	Manager* pmgr = (Manager*)arg;
+
+	cout<<"Welcome to the hash distributed system, you are in the client"<<endl;
+	cout<<"You can put, get, del key to and from the system"<<endl;
+	while(1)
+	{
+		cout<<"Presee 1 to put, 2 to get, 3 to del"<<endl;
+		int action = 0;
+		cin>>action;
+		if(action == 1)
+		{
+			string key = "";
+			string value = "";
+			cout<<"Please enter the key"<<endl;
+			cin>>key;
+			cout<<"Please enter the value"<<endl;
+			cin>>value;
+
+			if(pmgr->put(key, value) != 0)
+				cout<<"put failed"<<endl;
+			else
+				cout<<"put success"<<endl;
+
+		}
+		else if(action == 2)
+		{
+			string key = "";
+			string value = "";
+			cout<<"Please enter the key"<<endl;
+			cin>>key;
+
+			if(pmgr->get(key) != 0 || value == "")
+				cout<<"get failed"<<endl;
+			else
+				cout<<"get success"<<endl;
+
+		}
+		else if(action == 3)
+		{
+			string key = "";
+			cout<<"Please enter the key"<<endl;
+			cin>>key;
+
+			if(pmgr->del(key) != 0)
+				cout<<"del failed"<<endl;
+			else
+				cout<<"del success"<<endl;
+		}
+		else
+		{
+			cout<<"The action you typed not recognized, please confirm"<<endl;
+		}
+	}
 	return 0;
 }
 
 
+int Manager::put(const string& key, const string& value)
+{
+	int hash = getHash(key);
+	string severip = m_vecPeerInfo[hash%m_iServernum].ip;
+	int serverport = m_vecPeerInfo[hash%m_iServernum].port;
+	Socket* sock = new Socket(severip.c_str(), serverport, ST_TCP);
+	sock->Create();
 
+	if(sock->Connect() != 0)
+	{
+		cout<<"connect to hash server failed"<<endl;
+		delete sock;
+		return -1;
+	}
 
+	char* sbuff = new char[MAX_MESSAGE_LENGTH];
+	bzero(sbuff, MAX_MESSAGE_LENGTH);
+	(Message*) smsg = (Message*)sbuff;
+	smsg->action = CMD_PUT;
+	strncpy(smsg->key, key.c_str(), MAX_KEY_LENGTH);
+	strncpy(smsg->value, value.c_str(), MAX_VALUE_LENGTH);
+
+	if(sock->Send(sbuff, MAX_MESSAGE_LENGTH) != MAX_MESSAGE_LENGTH)
+	{
+		cout<<"send put message to hash server failed"<<endl;
+		sock->Close();
+		delete sock;
+		delete[] sbuff;
+		return -1;
+	}
+
+	char* rbuff = new char[MAX_MESSAGE_LENGTH];
+	bzero(rbuff, MAX_MESSAGE_LENGTH);
+	if(sock->Recv(rbuff, MAX_MESSAGE_LENGTH) != MAX_MESSAGE_LENGTH)
+	{
+		cout<<"put message recv from hash server failed"<<endl;
+		sock->Close();
+		delete sock;
+		delete[] sbuff;
+		delete[] rbuff;
+		return -1;
+	}
+
+	(Message*) rmsg = (Message*)rbuff;
+	int ret = rmsg->action == CMD_OK?0:-1;
+
+	sock->Close();
+	delete sock;
+	delete[] sbuff;
+	delete[] rbuff;
+	return ret;
+}
+int Manager::get(const string& key, string& value)
+{
+	int hash = getHash(key);
+	string severip = m_vecPeerInfo[hash%m_iServernum].ip;
+	int serverport = m_vecPeerInfo[hash%m_iServernum].port;
+	Socket* sock = new Socket(severip.c_str(), serverport, ST_TCP);
+	sock->Create();
+
+	if(sock->Connect() != 0)
+	{
+		cout<<"connect to hash server failed"<<endl;
+		delete sock;
+		return -1;
+	}
+
+	char* sbuff = new char[MAX_MESSAGE_LENGTH];
+	bzero(sbuff, MAX_MESSAGE_LENGTH);
+	(Message*) smsg = (Message*)sbuff;
+	smsg->action = CMD_SEARCH;
+	strncpy(smsg->key, key.c_str(), MAX_KEY_LENGTH);
+
+	if(sock->Send(sbuff, MAX_MESSAGE_LENGTH) != MAX_MESSAGE_LENGTH)
+	{
+		cout<<"send search message to hash server failed"<<endl;
+		sock->Close();
+		delete sock;
+		delete[] sbuff;
+		return -1;
+	}
+
+	char* rbuff = new char[MAX_MESSAGE_LENGTH];
+	bzero(rbuff, MAX_MESSAGE_LENGTH);
+	if(sock->Recv(rbuff, MAX_MESSAGE_LENGTH) != MAX_MESSAGE_LENGTH)
+	{
+		cout<<"search message recv from hash server failed"<<endl;
+		sock->Close();
+		delete sock;
+		delete[] sbuff;
+		delete[] rbuff;
+		return -1;
+	}
+
+	(Message*) rmsg = (Message*)rbuff;
+	value = rmsg->value;
+
+	sock->Close();
+	delete sock;
+	delete[] sbuff;
+	delete[] rbuff;
+	return 0;
+}
+
+bool Manager::del(const string& key)
+{
+	int hash = getHash(key);
+	string severip = m_vecPeerInfo[hash%m_iServernum].ip;
+	int serverport = m_vecPeerInfo[hash%m_iServernum].port;
+	Socket* sock = new Socket(severip.c_str(), serverport, ST_TCP);
+	sock->Create();
+
+	if(sock->Connect() != 0)
+	{
+		cout<<"connect to hash server failed"<<endl;
+		delete sock;
+		return -1;
+	}
+
+	char* sbuff = new char[MAX_MESSAGE_LENGTH];
+	bzero(sbuff, MAX_MESSAGE_LENGTH);
+	(Message*) smsg = (Message*)sbuff;
+	smsg->action = CMD_DEL;
+	strncpy(smsg->key, key.c_str(), MAX_KEY_LENGTH);
+
+	if(sock->Send(sbuff, MAX_MESSAGE_LENGTH) != MAX_MESSAGE_LENGTH)
+	{
+		cout<<"send put message to hash server failed"<<endl;
+		sock->Close();
+		delete sock;
+		delete[] sbuff;
+		return -1;
+	}
+
+	char* rbuff = new char[MAX_MESSAGE_LENGTH];
+	bzero(rbuff, MAX_MESSAGE_LENGTH);
+	if(sock->Recv(rbuff, MAX_MESSAGE_LENGTH) != MAX_MESSAGE_LENGTH)
+	{
+		cout<<"put message recv from hash server failed"<<endl;
+		sock->Close();
+		delete sock;
+		delete[] sbuff;
+		delete[] rbuff;
+		return -1;
+	}
+
+	(Message*) rmsg = (Message*)rbuff;
+	int ret = rmsg->action == CMD_OK?0:-1;
+
+	sock->Close();
+	delete sock;
+	delete[] sbuff;
+	delete[] rbuff;
+	return ret;
+}
+
+int Manager::getHash(const string& key)
+{
+	return atoi(key.c_str());
+}
 
 

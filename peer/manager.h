@@ -35,20 +35,31 @@ protected:
 	int Loop();
 
 private:
+	int put(const string& key, const string& value);
+	int get(const string& key, string& value);
+	bool del(const string& key);
+	// for uniform distribution, we here suppose the key is all number string, like "999"
+	// and getHash only return its int.
+	int getHash(const string& key);
+
+
+private:
 	Socket* m_pClientSock;
 	Socket* m_pSocket;
 	RequestQueue m_rq;
 
+	HashtableManager m_htm;
 
-	string m_strPeerIp;
-	int m_iPeerPort;
+	string m_strSelfIp;
+	int m_iSelfPort;
 
-	int m_iServernum;
-	int m_iCurrentServernum;
-	int m_iPeerThreadPoolNum;
+	int m_iServernum;  // total number of peers exist in this static network
+	int m_iCurrentServernum;  // the current server(peer) identifier in this static network
+	int m_iPeerThreadPoolNum; // thread num
+	int m_ihashnum;
 	int m_iTestMode; 
 
-	vector<PeerInfo> m_vecPeerInfo;
+	vector<PeerInfo> m_vecPeerInfo; // all peers in this static network info
 
 	Sem* m_semRequest;
 	Mutex* m_mtxRequest;

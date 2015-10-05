@@ -9,10 +9,10 @@ using namespace std;
 class HashtableManager
 {
 public:
-	HashtableManager();
+	HashtableManager(unsigned int hashnum);
 	~HashtableManager();
 
-	int Create();
+	int Create(unsigned int hashnum);
 	int Insert(const string& key, const string& value);
 	int Search(const string& key, string& value);
 	int Delete(const string& key);
