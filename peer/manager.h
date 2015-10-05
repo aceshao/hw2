@@ -44,6 +44,8 @@ private:
 
 	int testmode();
 
+	Socket* getSock(string ip, int port);
+
 
 private:
 	Socket* m_pClientSock;

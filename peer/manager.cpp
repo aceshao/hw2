@@ -64,6 +64,7 @@ Manager::Manager(string configfile)
 		pi.identifier = config->GetIntVal("SYSTEM", serveridentifier, 0);
 		pi.keybegin = config->GetIntVal("SYSTEM", keybegin, 0);
 		pi.keyend = config->GetIntVal("SYSTEM", keyend, 1);
+		pi.sock = NULL;
 		assert(pi.keyend - pi.keybegin > 0);
 		assert(pi.keyend - pi.keybegin < m_ihashnum);
 		m_vecPeerInfo.push_back(pi);
@@ -109,6 +110,15 @@ Manager::~Manager()
 	{
 		delete m_pUserProcess;
 		m_pUserProcess = NULL;
+	}
+
+	for(unsigned int i = 0; i < m_vecPeerInfo.size(); i++)
+	{
+		if(m_vecPeerInfo[i].sock != NULL)
+		{
+			delete m_vecPeerInfo[i].sock;
+			m_vecPeerInfo[i].sock = NULL;
+		}
 	}
 }
 
@@ -204,18 +214,38 @@ int Manager::Loop()
 		if(nfds <= 0) continue;
 		for (int i = 0; i < nfds; i++)
 		{
-			Socket* s = new Socket();
-			int iRet = m_pSocket->Accept(s);
-			if(iRet < 0)
+			if(events[i].data.fd == listenfd)
 			{
-				cout<<"socket accept failed: ["<<errno<<"]"<<endl;
-				continue;
+				Socket* s = new Socket();
+				int iRet = m_pSocket->Accept(s);
+				if(iRet < 0)
+				{
+					cout<<"socket accept failed: ["<<errno<<"]"<<endl;
+					continue;
+				}
+				s->SetSockAddressReuse(true);
+				// all the new socket into the listen queue to resue connection
+				struct epoll_event ev;
+				ev.data.fd = s->GetSocket();
+				ev.events = EPOLLIN|EPOLLERR;
+				epoll_ctl(epfd, EPOLL_CTL_ADD, ev.data.fd, &ev);
+				m_mtxRequest->Lock();
+				m_rq.push(s);
+				m_semRequest->Post();
+				m_mtxRequest->Unlock();				
 			}
-			s->SetSockAddressReuse(true);
-			m_mtxRequest->Lock();
-			m_rq.push(s);
-			m_semRequest->Post();
-			m_mtxRequest->Unlock();
+			else if(events[i].events & EPOLLIN)
+			{
+				m_mtxRequest->Lock();
+				m_rq.push(events[i].data.fd);
+				m_semRequest->Post();
+				m_mtxRequest->Unlock();	
+			}
+			else if(events[i].events & EPOLLERR)
+			{
+				cout<<"socket get error epoll"<<endl;
+			}
+
 		}
 		usleep(100000);
 	}
@@ -239,7 +269,6 @@ void* Process(void* arg)
 		if(client->Recv(recvBuff, MAX_MESSAGE_LENGTH) != MAX_MESSAGE_LENGTH)
 		{
 			cout<<"recv failed"<<endl;
-			client->Close();
 			delete [] recvBuff;
 			continue;
 		}
@@ -309,7 +338,6 @@ void* Process(void* arg)
 			cout<<"cmd unknown["<<recvMsg->action<<"]"<<endl;
 		}
 
-		client->Close();
 		delete[] recvBuff;
 		delete[] sendBuff;
 	}
@@ -380,19 +408,45 @@ void* UserCmdProcess(void* arg)
 	return 0;
 }
 
-
-int Manager::put(string key, string value)
+Socket* Manager::getSock(string ip, int port)
 {
-	int hash = getHash(key);
-	string severip = m_vecPeerInfo[hash%m_iServernum].ip;
-	int serverport = m_vecPeerInfo[hash%m_iServernum].port;
-	Socket* sock = new Socket(severip.c_str(), serverport, ST_TCP);
+	Socket** s = 0;
+	for(unsigned int i = 0; i < m_vecPeerInfo.size(); i++)
+	{
+		if(m_vecPeerInfo[i].ip == ip && m_vecPeerInfo[i].port == port)
+		{
+			if(m_vecPeerInfo[i].sock != NULL)
+				return m_vecPeerInfo[i].sock;
+			else
+				s = &m_vecPeerInfo[i].sock;
+		}
+	}
+
+	Socket* sock = new Socket(ip.c_str(), port, ST_TCP);
 	sock->Create();
 
 	if(sock->Connect() != 0)
 	{
 		cout<<"connect to hash server failed"<<endl;
 		delete sock;
+		return 0;
+	}
+
+	*s = sock;
+	return sock;
+}
+
+
+
+int Manager::put(string key, string value)
+{
+	int hash = getHash(key);
+	string severip = m_vecPeerInfo[hash%m_iServernum].ip;
+	int serverport = m_vecPeerInfo[hash%m_iServernum].port;
+	Socket* sock = NULL;
+	if((sock = getSock(severip.c_str(), serverport) == NULL)
+	{
+		cout<<"get sock failed"<<endl;
 		return -1;
 	}
 
@@ -407,7 +461,6 @@ int Manager::put(string key, string value)
 	{
 		cout<<"send put message to hash server failed"<<endl;
 		sock->Close();
-		delete sock;
 		delete[] sbuff;
 		return -1;
 	}
@@ -418,7 +471,6 @@ int Manager::put(string key, string value)
 	{
 		cout<<"put message recv from hash server failed"<<endl;
 		sock->Close();
-		delete sock;
 		delete[] sbuff;
 		delete[] rbuff;
 		return -1;
@@ -428,7 +480,6 @@ int Manager::put(string key, string value)
 	int ret = rmsg->action == CMD_OK?0:-1;
 
 	sock->Close();
-	delete sock;
 	delete[] sbuff;
 	delete[] rbuff;
 	return ret;
@@ -438,13 +489,10 @@ int Manager::get(string key, string& value)
 	int hash = getHash(key);
 	string severip = m_vecPeerInfo[hash%m_iServernum].ip;
 	int serverport = m_vecPeerInfo[hash%m_iServernum].port;
-	Socket* sock = new Socket(severip.c_str(), serverport, ST_TCP);
-	sock->Create();
-
-	if(sock->Connect() != 0)
+	Socket* sock = NULL;
+	if((sock = getSock(severip.c_str(), serverport) == NULL)
 	{
-		cout<<"connect to hash server failed"<<endl;
-		delete sock;
+		cout<<"get sock failed"<<endl;
 		return -1;
 	}
 
@@ -458,7 +506,6 @@ int Manager::get(string key, string& value)
 	{
 		cout<<"send search message to hash server failed"<<endl;
 		sock->Close();
-		delete sock;
 		delete[] sbuff;
 		return -1;
 	}
@@ -469,7 +516,6 @@ int Manager::get(string key, string& value)
 	{
 		cout<<"search message recv from hash server failed"<<endl;
 		sock->Close();
-		delete sock;
 		delete[] sbuff;
 		delete[] rbuff;
 		return -1;
@@ -479,7 +525,6 @@ int Manager::get(string key, string& value)
 	value = rmsg->value;
 
 	sock->Close();
-	delete sock;
 	delete[] sbuff;
 	delete[] rbuff;
 	return 0;
@@ -490,13 +535,10 @@ bool Manager::del(string key)
 	int hash = getHash(key);
 	string severip = m_vecPeerInfo[hash%m_iServernum].ip;
 	int serverport = m_vecPeerInfo[hash%m_iServernum].port;
-	Socket* sock = new Socket(severip.c_str(), serverport, ST_TCP);
-	sock->Create();
-
-	if(sock->Connect() != 0)
+	Socket* sock = NULL;
+	if((sock = getSock(severip.c_str(), serverport) == NULL)
 	{
-		cout<<"connect to hash server failed"<<endl;
-		delete sock;
+		cout<<"get sock failed"<<endl;
 		return -1;
 	}
 
@@ -510,7 +552,6 @@ bool Manager::del(string key)
 	{
 		cout<<"send put message to hash server failed"<<endl;
 		sock->Close();
-		delete sock;
 		delete[] sbuff;
 		return -1;
 	}
@@ -521,7 +562,6 @@ bool Manager::del(string key)
 	{
 		cout<<"put message recv from hash server failed"<<endl;
 		sock->Close();
-		delete sock;
 		delete[] sbuff;
 		delete[] rbuff;
 		return -1;
@@ -531,7 +571,6 @@ bool Manager::del(string key)
 	int ret = rmsg->action == CMD_OK?0:-1;
 
 	sock->Close();
-	delete sock;
 	delete[] sbuff;
 	delete[] rbuff;
 	return ret;

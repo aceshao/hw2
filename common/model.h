@@ -3,6 +3,7 @@
 
 #include <string>
 #include <vector>
+#include "socket.h"
 using namespace std;
 
 const int MAX_EPOLL_FD = 30;
@@ -29,6 +30,7 @@ typedef struct PeerInfo
 	int identifier;
 	int keybegin;
 	int keyend;
+	Socket* sock;
 
 }PeerInfo;
 
