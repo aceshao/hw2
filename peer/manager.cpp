@@ -25,6 +25,10 @@ Manager::Manager(string configfile)
 	m_mtxRequest = NULL;
 	m_pUserProcess = NULL;
 
+	m_iPutTime = 0;
+	m_iGetTime = 0;
+	m_iDelTime = 0;
+
 	Config* config = Config::Instance();
 	if( config->ParseConfig(configfile.c_str(), "SYSTEM") != 0)
 	{
@@ -47,13 +51,21 @@ Manager::Manager(string configfile)
 		char serverip[30] = {0};
 		char serverport[30] = {0};
 		char serveridentifier[30] = {0};
+		char keybegin[30] = {0};
+		char keyend[30] = {0};
 		snprintf(serverip, 30, "serverip_%d", i);
-		snprintf(serverport, 10, "serverport_%d", i);
-		snprintf(serveridentifier, 10, "server_identifier_%d", i);
+		snprintf(serverport, 30, "serverport_%d", i);
+		snprintf(serveridentifier, 30, "server_identifier_%d", i);
+		snprintf(keybegin, 30, "key_begin_%d", i);
+		snprintf(keyend, 30, "key_end_%d", i);
 		PeerInfo pi;
 		pi.ip = config->GetStrVal("SYSTEM", serverip, "0.0.0.0");
 		pi.port = config->GetIntVal("SYSTEM", serverport, 55555);
 		pi.identifier = config->GetIntVal("SYSTEM", serveridentifier, 0);
+		pi.keybegin = config->GetIntVal("SYSTEM", keybegin, 0);
+		pi.keyend = config->GetIntVal("SYSTEM", keyend, 1);
+		assert(pi.keyend - pi.keybegin > 0);
+		assert(pi.keyend - pi.keybegin < m_ihashnum);
 		m_vecPeerInfo.push_back(pi);
 	}
 
@@ -311,6 +323,10 @@ void* UserCmdProcess(void* arg)
 	Manager* pmgr = (Manager*)arg;
 
 	cout<<"Welcome to the hash distributed system, you are in the client"<<endl;
+	if(m_iTestMode != 0)
+		pmgr->testmode();
+
+	cout<<endl<<"Enter into the user interface"<<endl;
 	cout<<"You can put, get, del key to and from the system"<<endl;
 	while(1)
 	{
@@ -525,5 +541,67 @@ int Manager::getHash(const string& key)
 {
 	return atoi(key.c_str());
 }
+
+int Manager::testmode()
+{
+	cout<<"You are now in TEST MODE"<<endl;
+	const int keybegin = m_vecPeerInfo[m_iCurrentServernum].keybegin;
+	const int keyend = m_vecPeerInfo[m_iCurrentServernum].keyend;
+
+	struct timeval begin;
+	struct timeval end;
+
+	gettimeofday(&begin, NULL);
+	for(int i = keybegin; i < keyend; i++)
+	{
+		char key[30] = {0};
+		snprintf(key, 30, "%d", i);
+		// for test, we use the value same with key
+		if(put(key, key) != 0)
+			cout<<"test mode put failed"<<endl;
+	}
+	gettimeofday(&end, NULL);
+	m_iPutTime = 1000000*end.tv_sec + end.tv_usec - begin.tv_usec - 1000000*begin.tv_sec;
+
+
+	gettimeofday(&begin, NULL);	
+	for(int i = keybegin; i < keyend; i++)
+	{
+		char key[30] = {0};
+		string value = "";
+		snprintf(key, 30, "%d", i);
+		if(get(key, value) != 0 || value == "")
+			cout<<"test mode get failed"<<endl;
+	}
+	gettimeofday(&end, NULL);
+	m_iGetTime = 1000000*end.tv_sec + end.tv_usec - begin.tv_usec - 1000000*begin.tv_sec;
+
+
+	gettimeofday(&begin, NULL);
+	for(int i = keybegin; i < keyend; i++)
+	{
+		char key[30] = {0};
+		string value = "";
+		snprintf(key, 30, "%d", i);
+		if(del(key) != 0)
+			cout<<"test mode del failed"<<endl;
+	}	
+	gettimeofday(&end, NULL);
+	m_iDelTime = 1000000*end.tv_sec + end.tv_usec - begin.tv_usec - 1000000*begin.tv_sec;
+
+
+	int loop = keyend - keybegin;
+	assert(loop > 0);
+	cout<<"Peer node["<<m_iCurrentServernum<<"] do ["<<loop<<"] times put, get, del each"<<endl;
+	cout<<"Average put time is ["<<m_iPutTime/loop<<"]us"<<endl;
+	cout<<"Average get time is ["<<m_iGetTime/loop<<"]us"<<endl;
+	cout<<"Average del time is ["<<m_iDelTime/loop<<"]us"<<endl;
+	cout<<"TEST DONE"<<endl;
+	return 0;
+}
+
+
+
+
 
 

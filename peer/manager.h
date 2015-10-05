@@ -42,6 +42,8 @@ private:
 	// and getHash only return its int.
 	int getHash(const string& key);
 
+	int testmode();
+
 
 private:
 	Socket* m_pClientSock;
@@ -68,6 +70,11 @@ private:
 	Thread* m_pUserProcess;
 	
 	int m_iPid;
+
+
+	unsigned int m_iPutTime;
+	unsigned int m_iGetTime;
+	unsigned int m_iDelTime;
 
 };
 

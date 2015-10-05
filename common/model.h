@@ -27,6 +27,8 @@ typedef struct PeerInfo
 	string ip;
 	int port;
 	int identifier;
+	int keybegin;
+	int keyend;
 
 }PeerInfo;
 
