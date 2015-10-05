@@ -5,6 +5,8 @@
 #include <vector>
 using namespace std;
 
+const int MAX_EPOLL_FD = 30;
+
 typedef struct PeerInfo
 {
 	string ip;

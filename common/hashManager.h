@@ -1,7 +1,7 @@
 #ifndef _HASHMANAGER_H
 #define _HASHMANAGER_H
 
-#include <string.h>
+#include <string>
 #include "thread.h"
 #include <ght_hash_table.h>
 using namespace std;
