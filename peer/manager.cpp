@@ -186,7 +186,7 @@ int Manager::Listen()
 		cout<<"socket listen failed"<<endl;
 		return -1;
 	}
-	cout<<"now begin listen"<<endl;
+	cout<<"Peer server now begin listen"<<endl;
 	return 0;
 }
 
@@ -322,11 +322,11 @@ void* UserCmdProcess(void* arg)
 {
 	Manager* pmgr = (Manager*)arg;
 
-	cout<<"Welcome to the hash distributed system, you are in the client"<<endl;
-	if(m_iTestMode != 0)
+	cout<<"Welcome to the hash distributed system, you are in the peer client"<<endl;
+	if(pmgr->m_iTestMode != 0)
 		pmgr->testmode();
 
-	cout<<endl<<"Enter into the user interface"<<endl;
+	cout<<endl<<"Welcome to the user interface"<<endl;
 	cout<<"You can put, get, del key to and from the system"<<endl;
 	while(1)
 	{
