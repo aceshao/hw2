@@ -1,0 +1,9 @@
+
+1. For data replication, I think there are several aspects can be done in the DHT system. Basically, We would like to on the one hand make sure the peer server is robost enough, and on the other hand each peer server can have multiple copies in case of down, the others can take its job. 
+
+What this program implemented is the server peer rebost. Each peer would have two processes, one process consists of many threads to do the normal job, another process would continuely monitor this process. The idea is that the multi threads' procsss is more easy to core or iterrupt, in this case, the other process can immediately pull it up and restart the service. 
+
+This is not enough to make the DHT robost. Like we should distribute one hast table to several copyies in different peers. However, this stragety is a little complex and I have not got more time to finish it at this point. So I will try it when available to make the whole system more  similar to the real environment.
+
+
+

@@ -1,0 +1,47 @@
+////////////////////////////////////////////////
+Peer node[0] do [999999] times put, get, del each
+Total time[43058407]us
+Average put time is [142]us
+Average get time is [143]us
+Average del time is [143]us
+TEST DONE
+////////////////////////////////////////////////
+
+The above test result is based on: test 100k for operations within 1 peer node in the environment of one Vm, with each components on different ports;
+
+////////////////////////////////////////////////
+Peer node[0] do [999] times put, get, del each
+Average put time is [101019]us
+Average get time is [100960]us
+Average del time is [100243]us
+TEST DONE
+////////////////////////////////////////////////
+
+The above test reuslt is based on: test 1K for each operations within 1 peer node before using long-connections in the environment of one Vm, with each components on different ports;
+
+////////////////////////////////////////////////
+Peer node[0] do [9999999] times put, get, del each
+Total time[936501910]us
+Average put time is [297]us
+Average get time is [316]us
+Average del time is [322]us
+TEST DONE
+////////////////////////////////////////////////
+
+The above test reuslt is based on: test 1M for each operations within 8 peer node in the environment of one Vm, with each components on different ports;
+
+
+You may read more test data in the output file where presents all the necessary data incluing experiment comparison data.
+
+Conclustion:
+1. The performance gain is obviously for the first test data set above since it use the long-connection. We have concluded in the hw1 that each operation time cost is basically dominant by socket connection. In this hw2 we reuse the connection and decrease the average operation time to the 100us around.
+
+2. As we increase the test sample quantity to 1M for each operation, we see the average time increased accordingly. However the time is acceptable and reasonable in terms of the big quantity. So it is scalable.
+
+3. Also to mention, the system is robost. There is no crash during all the tests.
+
+
+
+
+
+

@@ -1,0 +1,68 @@
+// This file is the HW2 manual
+// copyright by zhen shao
+// 10/10/2015
+
+--**** What is the file structure for this program? ****--
+The file structure is:
+	-hw2
+		-build			contains the MAKEFILE
+		-common   		contains the common used library
+		-config   		contains the config file. The default value is on purpose for test. Please change when need
+		-doc	  		contains the documentation
+		-peer 		 	contains the peer client source code
+		-third_library  contains the hash table we used in this homework, it is called ghthash.
+
+
+--**** What should be parpared before I run this program? ****--
+Since this hw2 use a third-library as a hash table in the peer server side. So before make, we need to install this library first. The library is in the directory of thrid_library. We need to execute those commands:
+	tar xvfz libghthash-0.6.2.tar.gz
+	cd libghthash-0.6.2
+	./configure
+	make
+	sudo make install
+
+
+--**** How to compiler the program? ****--
+Assume you are in the hw1 directory and have install the ghthash
+	cd build
+	make clean;make
+
+After this command, you would automatically has executable peer in the build directory
+
+--**** What does the config file contains and how to change? ****--
+The peer config file should contain:
+	currentservernum = 0    // this specify the current peer's number in the whole peer nood system
+	servernum = 1   		// this specify the number of peer nodes in the whole system
+	hashnum = 200000		// this specify the maxmium number for the hash table in one peer node
+	threadnum = 10 			// this specify the thread number in the pool
+	testmode = 1 			// this specify whether it is in the test mode
+
+	serverip_0 = 127.0.0.1   // this is the server ip for server 0 
+	serverport_0 = 5551		// this is the server port for server 0
+	server_identifier_0 = 0 // this is the server identifier for server 0
+	key_begin_0	= 100000    // this specify the key begins at 100000 in server 0
+	key_end_0   = 199999    // this specify the key ends at 199999 in server 0
+
+	... 					// For each server(total number is servernum), should specify the above config
+
+You may directly use the config file in the config directory and just slightly change in your purpose.
+
+--**** How to run the program ****--
+After install the ghthash, make, and change the config file if need, run the command:
+./peer ../config/peer0.conf
+
+Notice: when there are more than 1 server in the whole system, since each peer would communicate with other peer when they start, we hardcode that each peer would wait 10s to start the communication to wait all servers are set up. So if you wanna test 8 peer nodes. It is highly recommend that you start all the 8 peer nodes in 10s, otherwise, there would be some connect failed.
+
+
+--*** How to start the test mode, that's to say, the Performance evaluation? ****--
+Change the config file for each peer node. Modify the 'testmode's value to 1.
+
+--**** Other resource to consider? ****--
+The output file can be viewed about the program process.
+
+
+
+
+
+
+
